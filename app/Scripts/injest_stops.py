@@ -2,11 +2,9 @@ import sys
 from pathlib import Path
 import pandas as pd
 
-# Add project root to Python path FIRST
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Now import after path is set
 from app.models.Stop import Stop
 from app.models.Route import Route
 from app.models.RouteStop import RouteStop 
@@ -20,7 +18,6 @@ def populate_stops():
         csv_path = Path(__file__).parent / "stops.csv"
         print(f"Loading stops from: {csv_path}")
         
-        # Read CSV with pandas
         stops_df = pd.read_csv(csv_path)
         
         stops_list = []
