@@ -25,14 +25,16 @@ class PredictionService():
 
         # This is the simplest/accurate way od predicting using averages
         # This is not the final version. Dont worry,
+        durations = [(j.end_time - j.start_time).total_seconds() for j in completed_journeys]
+        avrg_duration = sum(durations) / len(durations) if durations else 30 * 60  # fallback 30 mins
 
-        durations = [(Journey.end_time - Journey.start_time).total_seconds()for j in completed_journeys]
-        avrg_duration = sum(durations)/len(durations) if durations else 30*60 #fallback 30 mins, unrealistic i know
-
-
+        # TODO Return translink official data 
         predicted_arrival = start_time + timedelta(seconds=avrg_duration)
         predicted_status = "on_time"
-        if durations and max(durations) > avrg_duration * 1.2:
+        
+        # FIXED: Compare average duration variance, not max
+        if durations and avrg_duration > 45 * 60:  # If average is over 45 mins, likely delayed
             predicted_status = "DELAYED"
 
-        return predicted_status, predicted_arrival
+        # FIXED: Return in correct order (arrival first, then status)
+        return predicted_arrival, predicted_status

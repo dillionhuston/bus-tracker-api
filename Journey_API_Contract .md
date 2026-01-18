@@ -8,6 +8,7 @@ All endpoints use **JSON**. Authentication is going to be handeld through JWT An
 
 ## Routes
 
+- Done/Tested
 ### GET `/route/routes`
 Retrieve all bus routes.
 e.g Belfast -> Lisburn
@@ -26,6 +27,7 @@ e.g Belfast -> Lisburn
 - `id` is the route identifier (string / UUID depending on backend)
 
 ---
+
 
 ### GET `/route/routes/{route_id}/stops`
 Fetch all stops along a route in sequence order.
@@ -95,7 +97,7 @@ Add an event to an active journey (e.g. arrived, delayed, stop reached).
 
 **Path Parameters**
 | Name | Type | Required | Description |
-|----|----|----|----|
+|----|----|----|----|---
 | journey_id | uuid | yes | Journey identifier |
 
 **Request Body**
