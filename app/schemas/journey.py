@@ -23,6 +23,7 @@ class StartJourney(BaseModel):
     route_id: str
     start_stop_id: str
     end_stop_id: str
+    planned_start_time: datetime | None = None
 
 
 

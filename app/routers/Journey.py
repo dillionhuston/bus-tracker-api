@@ -10,6 +10,7 @@ from app.Services.journeyService.journey_service import JourneyService
 from app.Services.journeyService.eventHandler import JourneyEventHandler
 
 
+
 router = APIRouter(prefix="/journeys", tags=['Journeys'])
 
 @router.post("/start")
@@ -17,7 +18,6 @@ def startJourney(
     journey: StartJourney,
     db: Session = Depends(get_db)):
     """User starts their journey by submitting their route and start/end stops"""
-
 
     if not journey.start_stop_id or not journey.end_stop_id:
         raise HTTPException(
@@ -42,7 +42,7 @@ def add_journey_event(
     """User submits an event. Bus arrived, delayed, stop reached"""
 
 
-    if not event.event_type:
+    if not event.event:
         raise HTTPException(
             status_code=400,
             detail="You must provide a valid event. Arrived, Delayed, StopReached"
@@ -50,7 +50,7 @@ def add_journey_event(
 
 
     updated_journey = JourneyEventHandler.add_event(
-        event_type=event.event_type,
+        event_type=event.event,
         db=db,
         journey_id=journey_id
     )

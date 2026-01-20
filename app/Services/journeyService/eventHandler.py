@@ -17,9 +17,9 @@ class JourneyEventHandler:
     def arrived(journey_id: UUID, db: Session) -> Journey:
         """Set user active journey status to arrived"""
 
-        # FIXED: Allow STARTED -> ARRIVED transition
         allowed = {"STARTED", "DELAYED"}
-        journey = db.get(Journey, journey_id)
+        # FIXED: Convert UUID to string
+        journey = db.get(Journey, str(journey_id))
 
         if not journey:
             logger.error(f"Journey not found: {journey_id}")
@@ -31,8 +31,8 @@ class JourneyEventHandler:
                 detail=f"Cannot mark as ARRIVED from status: {journey.status}"
             )
         
+        journey.start_time = datetime.now(timezone.utc)
         journey.status = JourneyEventType.EVENT_TYPE_ARRIVED
-        # potentially add an arrival_time field to the field 
         db.commit()
         db.refresh(journey)
         return journey
@@ -41,8 +41,10 @@ class JourneyEventHandler:
     def delayed(journey_id: UUID, db: Session) -> Journey:
         """Set user active journey status to DELAYED"""
 
-        allowed = {JourneyEventType.EVENT_TYPE_STARTED}  
-        journey = db.get(Journey, journey_id)
+        allowed = {JourneyEventType.EVENT_TYPE_STARTED}
+        # FIXED: Convert UUID to string
+        journey = db.get(Journey, str(journey_id))
+        
         if not journey:
             raise HTTPException(404, f"Journey {journey_id} not found")
 
@@ -61,8 +63,9 @@ class JourneyEventHandler:
 
     @staticmethod
     def stop_reached(journey_id: UUID, db: Session) -> Journey:
-        allowed = {JourneyEventType.EVENT_TYPE_STARTED, JourneyEventType.EVENT_TYPE_DELAYED}  
-        journey = db.get(Journey, journey_id)
+        allowed = {JourneyEventType.EVENT_TYPE_STARTED, JourneyEventType.EVENT_TYPE_DELAYED, JourneyEventType.EVENT_TYPE_ARRIVED}
+        # FIXED: Convert UUID to string
+        journey = db.get(Journey, str(journey_id))
 
         if not journey:
             raise HTTPException(404, f"Journey {journey_id} not found")

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, Integer, Float
+from sqlalchemy import Column, String, ForeignKey, Integer, Float, JSON, DateTime
 from sqlalchemy.orm import relationship
 
 from app.models.Database import Base
@@ -9,6 +9,8 @@ class Route(Base):
     id = Column(String, nullable=False, primary_key=True)  # e.g., 12a, 10J
     name = Column(String, nullable=False)
     direction = Column(String, nullable=True)
+    official_timetable = Column(JSON, nullable=True)
+    timetable_last_updated=Column(DateTime, nullable=True)
 
     route_stops = relationship('RouteStop', back_populates='route')
 
