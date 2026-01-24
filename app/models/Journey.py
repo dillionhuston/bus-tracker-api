@@ -15,8 +15,8 @@ class Journey(Base):
     end_time = Column(DateTime, nullable=True)
     status = Column(String, nullable=True)  # completed, delayed etc
     created_at = Column(DateTime, nullable=False)
-    official_start_time = Column(String, nullable=False)
-    official_end_time = Column(String, nullable=False)
+    official_start_time = Column(String, nullable=True)
+    official_end_time = Column(String, nullable=True)
     
     predicted_status = Column(String, nullable=False)
     predicted_arrival = Column(String, nullable=False) 

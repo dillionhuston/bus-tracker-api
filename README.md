@@ -1,115 +1,238 @@
-# Belfast Bus Tracker
+# Journey Tracking System
 
-A community-driven bus arrival time prediction system for Belfast.
+A real-time public transit journey tracking and prediction system that learns from user-submitted journey data to improve arrival time predictions.
 
-The system combines static timetable data from Translink with crowdsourced journey observations submitted by users.  
-No continuous GPS tracking is used — privacy is a core priority.
+## What It Does
 
-## Purpose
+This system tracks bus journeys and predicts arrival times by combining official timetable data with real user journey submissions. The more users submit their actual journey data, the more accurate the predictions become for everyone.
 
-- Provide reasonably accurate bus arrival time predictions
-- Require minimal user input and interaction
-- Automatically improve predictions as more observations are collected
-- Respect user privacy by avoiding live location tracking
+**Key Features:**
+- Start and track active bus journeys
+- Submit journey events (arrived, delayed, stop reached)
+- Smart predictions that improve with more data
+- Blend official timetables with real-world user data
+- RESTful API built with FastAPI
 
-## Core Principles
+## How Predictions Work
 
-- No continuous/live GPS tracking
-- All prediction calculations happen on the backend
-- Users only provide very simple input (start + arrived)
-- Use segment-based predictions (between consecutive stops) for faster learning
-- Start with simple averaging, improve methods incrementally over time
+The prediction engine uses a tiered approach based on data availability:
 
-## High-Level Architecture
+- **20+ user journeys**: Uses only real user data (most accurate)
+- **5-19 user journeys**: Blends user data with official timetables
+- **< 5 user journeys**: Falls back to official timetable data
+- **No data**: Safe 30-minute fallback estimate
 
-- **Backend**: FastAPI + PostgreSQL
-- **Frontend**: Minimal UI (dropdowns, buttons, simple display)
-- **Data sources**:
-  - Translink public transport API (static routes, stops, timetables)
-  - User-submitted journey observations (dynamic real-world timings)
+Predictions use median journey duration when enough data exists (more robust to outliers) and average duration for smaller datasets.
 
-## Domain Models
+## Quick Start
 
-| Model         | Purpose                              | Key Fields                                                                 |
-|---------------|--------------------------------------|----------------------------------------------------------------------------|
-| Route         | Represents a bus service             | route_id, name, direction, operator                                        |
-| Stop          | Physical bus stop                    | stop_id, name, latitude, longitude                                         |
-| RouteStop     | Ordered stops on a specific route    | route_id, stop_id, stop_order                                              |
-| Segment       | Travel between two consecutive stops | segment_id, route_id, from_stop_id, to_stop_id                             |
-| Journey       | Single user journey                  | journey_id, route_id, origin_stop_id, destination_stop_id, started_at, completed_at |
-| 
+### Prerequisites
 
+- Python 3.9+
+- PostgreSQL
+- pip or poetry for dependency management
 
-
-## User Interaction Flow
-
-1. **Start Journey**  
-   User selects:  
-   - Route  
-   - Origin stop  
-   - Destination stop  
-   → Backend creates Journey record, starts prediction and records start timestamp
-
-2. **Complete Journey**  
-   User presses "Arrived" button when they reach their destination  
-   → Backend:  
-     - Calculates total journey duration  
-     - Proportionally allocates time across all segments between origin and destination  
-     - Stores individual segment Observations
-
-## Prediction Logic
-
-- Predictions are always **segment-based** (never full journey-based)
-- ETA for each segment is calculated from historical observation averages (when available)
-- All prediction logic lives on the backend
-- Frontend only requests and displays the results
-
-## Static Data Ingestion (Translink)
-
-1. Fetch all available routes and store basic metadata
-2. For each route: fetch ordered list of stops → store RouteStop entries
-3. Automatically generate segments (Stop1→Stop2, Stop2→Stop3, etc.) for every route
-
-## Frontend Responsibilities
-
-**Does:**
-- Show available routes and stops
-- Allow users to start and complete journeys
-- Display predicted arrival times
-
-**Does NOT:**
-- Perform any timing calculations
-- Store historical data
-- Run prediction algorithms
-
-## MVP Scope (End of January 2026)
-
-Must have working:
-
-- Route and stop data ingestion from Translink
-- Journey start/completion flow
-- Observation storage
-- Basic segment-based ETA prediction
-- Simple UI for beta testing
-
-**Out of scope for MVP:**
-
-- Live GPS tracking
-- Advanced machine learning models
-- User accounts / authentication
-- Complex API key system
-
-## Installation
+### Installation
 
 ```bash
-git clone https://github.com/dillionhuston/bus-tracker-api.git
-cd bus-tracker-api
+# Clone the repository
+git clone <repository-url>
+cd journey-tracking-system
 
-python3 -m venv venv
-source venv/bin/activate          
-
+# Install dependencies
 pip install -r requirements.txt
 
-python initdb.py                 
+# Set up environment variables
+cp .env.example .env
+# Edit .env and add your DATABASE_URL
+```
 
-uvicorn main:app --reload
+### Database Setup
+
+```bash
+# Create database
+createdb journey_tracking
+
+# Run migrations (if using Alembic)
+alembic upgrade head
+```
+
+### Running the Server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+API will be available at `http://localhost:8000`
+
+Interactive docs at `http://localhost:8000/docs`
+
+## API Usage
+
+### Get Available Routes
+
+```bash
+GET /route/routes
+```
+
+Returns list of all available routes with IDs and names.
+
+### Get Stops for a Route
+
+```bash
+GET /route/routes/{route_id}/stops
+```
+
+Returns ordered list of stops for the specified route.
+
+### Start a Journey
+
+```bash
+POST /journeys/start
+Content-Type: application/json
+
+{
+  "route_id": "16",
+  "start_stop_id": "490000001",
+  "end_stop_id": "490000050",
+  "planned_start_time": "2026-01-24T09:00:00Z"  // optional
+}
+```
+
+Returns journey ID and initial predictions.
+
+### Submit Journey Event
+
+```bash
+POST /journeys/{journey_id}/event
+Content-Type: application/json
+
+{
+  "event": "ARRIVED"  // or "DELAYED", "STOP_REACHED"
+}
+```
+
+Updates journey status and returns updated predictions.
+
+## Project Structure
+
+```
+app/
+├── models/              # SQLAlchemy models
+│   ├── Database.py      # Database connection setup
+│   ├── Journey.py       # Journey model
+│   └── Route.py         # Route, Stop, RouteStop models
+├── schemas/             # Pydantic schemas for validation
+│   ├── journey.py       # Journey request/response schemas
+│   ├── route.py         # Route schemas
+│   └── stop.py          # Stop schemas
+├── Services/
+│   ├── journeyService/  # Journey business logic
+│   │   ├── journey_service.py
+│   │   └── eventHandler.py
+│   └── Prediction/      # Prediction engine
+│       └── prediction.py
+└── routes/              # API route handlers
+    ├── Journey.py
+    ├── Route.py
+    └── test.py
+```
+
+## Journey State Machine
+
+```
+STARTED → DELAYED → ARRIVED → STOP_REACHED
+   ↓         ↓         ↓
+   └─────────┴─────────┘
+```
+
+- **STARTED**: Journey created, waiting for bus
+- **DELAYED**: User reports delay
+- **ARRIVED**: Bus has arrived, journey active
+- **STOP_REACHED**: Journey completed at destination
+
+## Contributing
+
+We welcome contributions! Here's how you can help:
+
+### Areas for Improvement
+
+1. **Prediction Engine**: Improve algorithms, add time-of-day patterns, weather integration
+2. **Real-time Updates**: WebSocket support for live journey updates
+3. **Data Validation**: Better validation for journey data quality
+4. **Analytics**: Dashboard for route performance metrics
+5. **Testing**: Expand test coverage (currently minimal)
+6. **Documentation**: API examples, architecture diagrams
+
+### Getting Started
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes
+4. Write or update tests
+5. Submit a pull request
+
+### Code Style
+
+- Follow PEP 8 for Python code
+- Use type hints where possible
+- Add docstrings to public methods
+- Keep functions focused and single-purpose
+
+### Running Tests
+
+```bash
+pytest tests/
+```
+
+## Technical Decisions
+
+### Why SQLAlchemy?
+Provides database abstraction and works well with FastAPI's dependency injection.
+
+### Why String IDs?
+Routes and stops use public identifiers (route numbers, ATCO codes) that users recognize. Internal journey IDs use UUIDs.
+
+### Why Median over Average?
+With 5+ data points, median is more robust to outliers (one unusually delayed journey won't skew predictions).
+
+### Data Source Tracking
+Journeys track whether they come from official timetables or user submissions, allowing the prediction engine to trust user data more as it accumulates.
+
+## Configuration
+
+Key environment variables in `.env`:
+
+```
+DATABASE_URL=postgresql://user:password@localhost/journey_tracking
+```
+
+## Known Limitations
+
+- No authentication/authorization yet
+- No data cleanup for old journeys
+- Limited error handling for edge cases
+- No rate limiting on API endpoints
+- Predictions don't account for time of day or day of week patterns yet
+
+## Roadmap
+
+- [ ] User authentication and personal journey history
+- [ ] Time-based prediction patterns (rush hour vs off-peak)
+- [ ] Mobile app integration
+- [ ] Real-time journey sharing between users
+- [ ] Integration with official transit APIs
+- [ ] Data export and analytics dashboard
+
+## License
+
+MIT License
+Copyright (c) 2026 Dillon Huston
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Built with FastAPI, SQLAlchemy, and PostgreSQL. Contributions welcome!

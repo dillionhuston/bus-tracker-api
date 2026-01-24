@@ -1,4 +1,4 @@
-from pydantic import BaseModel, datetime_parse
+from pydantic import BaseModel, datetime_parse, Field
 from datetime import datetime
 
 
@@ -18,11 +18,11 @@ class JourneyEventType():
     
 
 
-class StartJourney(BaseModel):
 
-    route_id: str
-    start_stop_id: str
-    end_stop_id: str
+class StartJourney(BaseModel):
+    route_id: str = Field(..., description="Public route identifier (e.g. '16', '2a')")
+    start_stop_id: str = Field(..., description="Public stop identifier (ATCO code)")
+    end_stop_id: str | None = None
     planned_start_time: datetime | None = None
 
 

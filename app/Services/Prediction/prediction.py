@@ -1,128 +1,114 @@
+from typing import Tuple, List
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from typing import Tuple
+
 from app.models.Journey import Journey
+from app.utils.logger.logger import get_logger
 
 
 class PredictionService:
     """
-    Service responsible for ETA / status predictions for journeys.
-    Uses hybrid approach: official data for bootstrap, user data for accuracy.
+    ETA & status prediction service.
+
+    How it decides what data to trust:
+    - 20+ real user journeys → use only user data (most accurate)
+    - 5-19 user journeys → blend user + official (prefer user)
+    - <5 user journeys → use official timetable (bootstrap)
+    - No data → safe fallback (30 min)
     """
 
-    # Configurable defaults
-    FALLBACK_DURATION_SECONDS = 30 * 60
-    HIGH_DURATION_THRESHOLD_SECONDS = 45 * 60
-    MIN_JOURNEYS_FOR_RELIABLE_STATS = 5
-    MIN_USER_JOURNEYS_TO_IGNORE_OFFICIAL = 20  # NEW: Threshold to switch
+    FALLBACK_MINUTES = 30
+    HIGH_THRESHOLD_MINUTES = 45
+    MIN_FOR_STATS = 5
+    MIN_TO_TRUST_USERS_ONLY = 20
 
-    def predict_journey(
-        self,
-        db: Session,
-        route_id: str,
-        start_time: datetime,
-    ) -> Tuple[datetime, str]:
+
+    @staticmethod
+    def predict_journey(db: Session,route_id: str,start_time: datetime,)-> Tuple[datetime, str]:
         """
-        Predict arrival time and status for a journey.
-        
-        Strategy:
-        1. If we have 20+ user journeys, use only those (most accurate)
-        2. If we have 5-19 user journeys, blend with official data
-        3. If we have <5 user journeys, use official data primarily
+        Main prediction method.
+
+        Returns: (predicted_arrival_time, status)
+        status: "on_time", "delayed", "early", "unknown"
         """
-        
-        # Get user journeys (real crowdsourced data)
-        user_journeys = (
-            db.query(Journey)
-            .filter(
-                Journey.route_id == route_id,
-                Journey.status == "STOP_REACHED",
-                Journey.data_source == "user",  # Only real user data
-                Journey.start_time.is_not(None),
-                Journey.end_time.is_not(None),
-                Journey.end_time > Journey.start_time,
-            )
-            .order_by(Journey.start_time.desc())
-            .limit(100)
-            .all()
-        )
-        
-        # Get official/seeded journeys (bootstrap data)
-        official_journeys = (
-            db.query(Journey)
-            .filter(
-                Journey.route_id == route_id,
-                Journey.status == "STOP_REACHED",
-                Journey.data_source == "official",  # Seeded data
-                Journey.start_time.is_not(None),
-                Journey.end_time.is_not(None),
-                Journey.end_time > Journey.start_time,
-            )
-            .order_by(Journey.start_time.desc())
-            .limit(100)
-            .all()
-        )
-        
-        user_count = len(user_journeys)
-        
-        # Phase 1: Enough user data. Use only this
-        if user_count >= self.MIN_USER_JOURNEYS_TO_IGNORE_OFFICIAL:
-            return self._predict_from_journeys(user_journeys, start_time, "user_data")
-        
-        # Phase 2: Some user data . Blend with official
-        elif user_count >= self.MIN_JOURNEYS_FOR_RELIABLE_STATS:
-            combined = user_journeys + official_journeys[:50]  # Prefer user data
-            return self._predict_from_journeys(combined, start_time, "blended")
-        
-        # Phase 3: Bootstrap phase. Use official data
-        elif official_journeys:
-            return self._predict_from_journeys(official_journeys, start_time, "official_data")
-        
-        # Phase 4: No data at all. Fallback
+        logger = get_logger()
+
+        # Safety: very far future → fallback
+        now_utc = datetime.now(timezone.utc)
+        if start_time > now_utc + timedelta(hours=24):
+            logger.warning(f"Very future start time ({start_time}), using fallback")
+            return start_time + timedelta(minutes=PredictionService.FALLBACK_MINUTES), "unknown"
+
+        # Get user submitted completed journeys (only durations)
+        user_durations = db.query(
+            (Journey.end_time - Journey.start_time).label("duration")
+        ).filter(
+            Journey.route_id == route_id,
+            Journey.status == "STOP_REACHED",
+            Journey.data_source == "user",
+            Journey.start_time.is_not(None),
+            Journey.end_time.is_not(None),
+            Journey.end_time > Journey.start_time,
+            (Journey.end_time - Journey.start_time) > timedelta(minutes=1)
+        ).order_by(Journey.start_time.desc()).limit(100).all()
+
+        user_count = len(user_durations)
+        logger.debug(f"User journeys found: {user_count}")
+
+        if user_count >= PredictionService.MIN_TO_TRUST_USERS_ONLY:
+            durations_sec = [row.duration.total_seconds() for row in user_durations]
+            source = "user_only"
         else:
-            return (
-                start_time + timedelta(seconds=self.FALLBACK_DURATION_SECONDS),
-                "unknown",
-            )
+            official_durations = db.query(
+                (Journey.end_time - Journey.start_time).label("duration")
+            ).filter(
+                Journey.route_id == route_id,
+                Journey.status == "STOP_REACHED",
+                Journey.data_source == "official",
+                Journey.start_time.is_not(None),
+                Journey.end_time.is_not(None),
+                Journey.end_time > Journey.start_time,
+                (Journey.end_time - Journey.start_time) > timedelta(minutes=1)
+            ).limit(50).all()
 
-    def _predict_from_journeys(
-        self, 
-        journeys: list[Journey], 
-        start_time: datetime,
-        source: str
-    ) -> Tuple[datetime, str]:
-        """Helper to calculate prediction from journey list"""
-        
-        durations_seconds = [
-            (j.end_time - j.start_time).total_seconds()
-            for j in journeys
-            if (j.end_time - j.start_time).total_seconds() > 60
-        ]
+            combined = user_durations + official_durations
+            durations_sec = [row.duration.total_seconds() for row in combined]
+            source = "blended" if user_count > 0 else "official"
 
-        if not durations_seconds:
-            return (
-                start_time + timedelta(seconds=self.FALLBACK_DURATION_SECONDS),
-                "unknown",
-            )
+        if not durations_sec:
+            logger.info(f"No valid durations for route {route_id} → fallback")
+            return start_time + timedelta(minutes=PredictionService.FALLBACK_MINUTES), "unknown"
 
-        avg_duration = sum(durations_seconds) / len(durations_seconds)
-        median_duration = sorted(durations_seconds)[len(durations_seconds) // 2]
+        # Compute stats
+        count = len(durations_sec)
+        avg_sec = sum(durations_sec) / count
+        sorted_sec = sorted(durations_sec)
+        median_sec = sorted_sec[count // 2]
 
-        predicted_duration = median_duration if len(durations_seconds) >= self.MIN_JOURNEYS_FOR_RELIABLE_STATS else avg_duration
-        predicted_arrival = start_time + timedelta(seconds=predicted_duration)
+        # Median is more robust with enough data
+        use_median = count >= PredictionService.MIN_FOR_STATS
+        predicted_sec = median_sec if use_median else avg_sec
+
+        predicted_arrival = start_time + timedelta(seconds=predicted_sec)
 
         # Status logic
         status = "on_time"
-        if len(durations_seconds) >= self.MIN_JOURNEYS_FOR_RELIABLE_STATS:
-            p75 = sorted(durations_seconds)[int(len(durations_seconds) * 0.75)]
-            if predicted_duration > p75 * 1.25:
+
+        if use_median:
+            p75 = sorted_sec[int(count * 0.75)]
+            if predicted_sec > p75 * 1.25:
                 status = "delayed"
-            elif predicted_duration < avg_duration * 0.75:
+            elif predicted_sec < avg_sec * 0.75:
                 status = "early"
         else:
-            if predicted_duration > self.HIGH_DURATION_THRESHOLD_SECONDS:
+            if predicted_sec > PredictionService.HIGH_THRESHOLD_MINUTES * 60:
                 status = "delayed"
 
-        print(f"[PREDICTION] Using {source}: {len(durations_seconds)} journeys, ETA in {predicted_duration/60:.1f} min")
-        
+        # Log result
+        logger.info(
+            f"[PREDICTION] {source} | "
+            f"{count} journeys | "
+            f"ETA +{predicted_sec/60:.1f} min | "
+            f"status: {status}"
+        )
         return predicted_arrival, status

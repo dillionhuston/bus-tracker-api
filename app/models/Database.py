@@ -22,7 +22,6 @@ SessionLocal = sessionmaker(
     bind= engine
     )
 
-# get use access to the database
 def get_db():
     db = SessionLocal()
     try:
