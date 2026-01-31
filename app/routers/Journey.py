@@ -2,6 +2,7 @@ from uuid import UUID
 from fastapi import Depends, APIRouter, HTTPException
 from sqlalchemy.orm import Session
 
+
 from datetime import datetime, timezone
 
 from app.models.Route import Route
@@ -13,7 +14,9 @@ from app.Services.journeyService.journey_service import JourneyService
 from app.Services.journeyService.eventHandler import JourneyEventHandler
 
 
-router = APIRouter(prefix="/journeys", tags=['Journeys'])
+from app.dependencies.internal_access import internal_access
+
+router = APIRouter(dependencies=[Depends(internal_access)], prefix="/journeys", tags=['Journeys'])
 
 # Rate limiting variables. V2 will have a more robust retry logic 
 last_request_time = {}
@@ -47,6 +50,7 @@ def start_journey(
 
     new_journey = JourneyService.start_journey(db=db, data=journey)
 
+    print(new_journey.predicted_arrival)
     return {
         "journey_id": new_journey.id,  
         "route_id": new_journey.route_id,
@@ -96,10 +100,14 @@ def add_journey_event(
             status_code=404,
             detail=f"Journey {journey_id} not found or not active"
         )
-
+    
+    
+    
     return {
         "journey_id": str(updated_journey.id),     
         "status": updated_journey.status,
         "predicted_arrival": updated_journey.predicted_arrival,
         "updated_at": updated_journey.created_at.isoformat() if updated_journey.created_at else None
     }
+
+    print()

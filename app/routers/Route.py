@@ -13,10 +13,12 @@ from app.schemas.route import RouteOut
 
 from app.utils.logger import logger
 
+
+from app.dependencies.internal_access import internal_access
 logger = logger.get_logger()
 
 
-router = APIRouter(prefix="/route", tags=["Route"])
+router = APIRouter(dependencies=[Depends(internal_access)], prefix="/route", tags=["Route"])
 
 
 # This is used for populating the drop down menu for the frontend

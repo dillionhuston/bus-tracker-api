@@ -12,5 +12,9 @@ class RouteOut(BaseModel):
 
 class StopsPerRoute(BaseModel):
     id: str
-    name:str
+    name: str
+    sequence: Optional[int] = None  
+    direction: Optional[str] = None  
 
+    class Config:
+        from_attributes = True  
